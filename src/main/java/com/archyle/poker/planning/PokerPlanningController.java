@@ -6,9 +6,6 @@ import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.handler.annotation.Payload;
 import org.springframework.messaging.handler.annotation.SendTo;
 import org.springframework.stereotype.Controller;
-import org.springframework.web.util.HtmlUtils;
-
-import java.util.Set;
 
 @Controller
 @RequiredArgsConstructor
@@ -16,54 +13,48 @@ public class PokerPlanningController {
 
     private final PokerPlanningService pokerPlanningService;
 
-    @MessageMapping("/hello")
-    @SendTo("/topic/greetings")
-    public Greeting greeting(HelloMessage message) throws Exception {
-        return new Greeting("Hello, " + HtmlUtils.htmlEscape(message.getName()) + "!");
-    }
-
-
     @MessageMapping("/room/{roomNumber}/join")
-    @SendTo("/topic/room/{roomNumber}/join")
-    public Room join(@DestinationVariable String roomNumber, @Payload JoinMessage joinMessage) {
+    @SendTo("/topic/poker-planning/room/{roomNumber}")
+    public ResponseMessage join(@DestinationVariable String roomNumber, @Payload JoinMessage joinMessage) {
         Room room = pokerPlanningService.getRoom(Integer.valueOf(roomNumber));
         room.getGuests().add(new Guest(joinMessage.getUserId(), joinMessage.getUserType(), null));
-        return room;
+        return new ResponseMessage(room, MessageType.JOIN);
     }
 
     @MessageMapping("/room/{roomNumber}/vote")
-    @SendTo("/topic/room/{roomNumber}/vote")
-    public Set<Guest> vote(@DestinationVariable String roomNumber, @Payload VoteMessage voteMessage) {
+    @SendTo("/topic/poker-planning/room/{roomNumber}")
+    public ResponseMessage vote(@DestinationVariable String roomNumber, @Payload VoteMessage voteMessage) {
         Room room = pokerPlanningService.getRoom(Integer.valueOf(roomNumber));
         room.getGuests().stream().filter(guest -> guest.getUserId().equals(voteMessage.getUserId())).findFirst().get().setPoints(voteMessage.getPoints().toString());
-        return room.getGuests();
+        room.setStatistics(pokerPlanningService.calculateStatistics(room));
+        return new ResponseMessage(room, MessageType.VOTE);
     }
 
     @MessageMapping("/room/{roomNumber}/leave")
-    @SendTo("/topic/room/{roomNumber}/leave")
-    public Set<Guest> leave(@DestinationVariable String roomNumber, @Payload JoinMessage joinMessage) {
+    @SendTo("/topic/poker-planning/room/{roomNumber}")
+    public ResponseMessage leave(@DestinationVariable String roomNumber, @Payload JoinMessage joinMessage) {
         Room room = pokerPlanningService.getRoom(Integer.valueOf(roomNumber));
         room.getGuests().removeIf(guest -> guest.getUserId().equals(joinMessage.getUserId()));
-        return room.getGuests();
+        room.setStatistics(pokerPlanningService.calculateStatistics(room));
+        return new ResponseMessage(room, MessageType.LEAVE);
     }
 
     @MessageMapping("/room/{roomNumber}/revealCards")
-    @SendTo("/topic/room/{roomNumber}/revealCards")
-    public Room revealCards(@DestinationVariable String roomNumber, @Payload JoinMessage joinMessage) {
+    @SendTo("/topic/poker-planning/room/{roomNumber}")
+    public ResponseMessage revealCards(@DestinationVariable String roomNumber) {
         Room room = pokerPlanningService.getRoom(Integer.valueOf(roomNumber));
         room.setStatistics(pokerPlanningService.calculateStatistics(room));
         room.setCardsAreRevealed(true);
-        return room;
+        return new ResponseMessage(room, MessageType.REVEAL_CARDS);
     }
 
     @MessageMapping("/room/{roomNumber}/hideCards")
-    @SendTo("/topic/room/{roomNumber}/hideCards")
-    public Set<Guest> hideCards(@DestinationVariable String roomNumber, @Payload JoinMessage joinMessage) {
+    @SendTo("/topic/poker-planning/room/{roomNumber}")
+    public ResponseMessage hideCards(@DestinationVariable String roomNumber) {
         Room room = pokerPlanningService.getRoom(Integer.valueOf(roomNumber));
-        room.setCardsAreRevealed(false);
         room.getGuests().forEach(guest -> guest.setPoints(null));
-        return room.getGuests();
+        room.setStatistics(pokerPlanningService.calculateStatistics(room));
+        room.setCardsAreRevealed(false);
+        return new ResponseMessage(room, MessageType.HIDE_CARDS);
     }
-
-
 }
